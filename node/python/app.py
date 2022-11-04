@@ -231,9 +231,7 @@ def process_message():
             return '{ "id": ' + f'{network_info.id}' + '}', 201
         # block messages with lower id
         if data.original_id < network_info.id:
-            # When you block a message propagate your own - this solves some egde cases after recovery   TODO cause of weird behaviour, should not be needed as election messages after recovery are sent in a loop
-            # if network_info.leader_id == -1:
-            #     send_message(BaseRequest(network_info.id, MessageType.ELECTION_ROUND))
+            # if the leader is down, repeat the message
             if network_info.leader_down:
                 send_message(BaseRequest(network_info.id, MessageType.ELECTION_ROUND))
             log_message(f'Received election message with lower ID, blocking')
