@@ -6,7 +6,7 @@ IP_OFFSET = 100
 
 
 class NetworkInfo:
-    def __init__(self, _id, ip, node_count):
+    def __init__(self, _id, ip, node_count, port):
         self.id = _id
         self.node_count = int(node_count)
         self.ip = ip
@@ -14,37 +14,47 @@ class NetworkInfo:
         self.color = None
         self.node_ids = None
 
-        self.round_trip_made = False
+        self.port = port
 
-        split_ip = ip.split('.')
-        self.ip_prefix = split_ip[0] + '.' + split_ip[1] + '.' + split_ip[2]
-        this = int(split_ip[3])
+        self.round_trip_made = False
+        self.leader_down = False
+
+        #split_ip = ip.split('.')
+        #self.ip_prefix = split_ip[0] + '.' + split_ip[1] + '.' + split_ip[2]
+        #this = int(split_ip[3])
 
         # One to the right if we are not the last node, otherwise the first node
-        if self.node_count == 2:
-            _next = 1 if this % 2 == 0 else 2
-        else:
-            _next = this + 1 if this - IP_OFFSET != self.node_count else IP_OFFSET + 1
-
-        self.right_neighbour_ip = f'{self.ip_prefix}.{_next}'
+        #if self.node_count == 2:
+        #    _next = 1 if this % 2 == 0 else 2
+        #else:
+        #    _next = this + 1 if this - IP_OFFSET != self.node_count else IP_OFFSET + 1
+        _next = port + 1 if port - 5000 != self.node_count else 5000 + 1
+        self.right_neighbour_ip = f'{self.ip}'
+        self.right_neighbour_port = _next
+        #self.right_neighbour_ip = f'{self.ip_prefix}.{_next}'
 
         self.right_neighbour_id = -1
 
     def get_right_neighbour_address(self):
-        return f'http://{self.right_neighbour_ip}:5000/message'
+        return f'http://{self.right_neighbour_ip}:{self.right_neighbour_port}/message'
+
+    def get_this_address(self):
+        return f'http://{self.ip}:{self.port}/message'
 
     def next_neighbour_shift(self):
-        split_ip = self.right_neighbour_ip.split('.')
-        neighbour = int(split_ip[3])
+        #split_ip = self.right_neighbour_ip.split('.')
+        #neighbour = int(split_ip[3])
 
-        if self.node_count == 2:
+        #if self.node_count == 2:
             # With two nodes we can't really shift anymore
-            return False
-        else:
-            _next = neighbour + 1 if neighbour - IP_OFFSET != self.node_count else IP_OFFSET + 1
+        #    return False
+        #else:
+        #    _next = neighbour + 1 if neighbour - IP_OFFSET != self.node_count else IP_OFFSET + 1
 
-        self.right_neighbour_ip = f'{self.ip_prefix}.{_next}'
-        return True
+        #self.right_neighbour_ip = f'{self.ip_prefix}.{_next}'
+
+        self.right_neighbour_port = self.right_neighbour_port + 1 if self.right_neighbour_port - 5000 != self.node_count else 5000 + 1
+        return self.right_neighbour_port != self.port
 
 
 class BaseRequest:
