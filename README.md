@@ -3,6 +3,9 @@
 Úkol je rozšířením 1. úkolu (https://github.com/aitakaitov/ds-01), a tedy princip formování logického kruhu, volby leadera
 a obarvování je v podstatě stejný.
 
+Spuštění přes <code>vagrant up</code>, skript pro simulaci výpadku není, ale stačí vypnout kontejner. Pokud
+by byl problém v bufferingu stdout, lze přepnout na výpis do souboru (viz. předchozí úloha).
+
 ## Výpadek a znovuobarvení
 
 Když se kruh formuje, každý uzel má nastavený maximální počet pokusů o kontaktování svého počátačního souseda. Pokud
