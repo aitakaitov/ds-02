@@ -71,18 +71,18 @@ class TimerManager:
         self.timeout = timeout
         self.lock = threading.RLock()
 
-    def add_timer_and_run(self, key, func):
+    def add_timer_and_run(self, key, func, purge=False):
         self.lock.acquire()
         if key in self.timers.keys():
-            if not self.timers[key].finished.is_set():
+            if not self.timers[key].finished.is_set() and not purge:
                 self.lock.release()
                 return
             else:
-                print(f'adding {key} timer')
+                #print(f'adding {key} timer')
                 self.timers[key] = threading.Timer(self.timeout, func)
                 self.timers[key].start()
         else:
-            print(f'adding {key} timer')
+            #print(f'adding {key} timer')
             self.timers[key] = threading.Timer(self.timeout, func)
             self.timers[key].start()
         self.lock.release()

@@ -12,11 +12,11 @@ import threading
 import socket
 socket.setdefaulttimeout(5)
 
-PRINT_TO_STD = True
+PRINT_TO_STD = False
 if not PRINT_TO_STD:
     open('output', 'w+', encoding='utf-8').close()
 
-MODE = 'port'
+MODE = 'ip'
 TIMEOUT_SEC = 30
 
 if MODE == 'port':
@@ -43,14 +43,10 @@ counters = {}
 
 
 def send_leader_down_message():
-    try:
-        if network_info.leader_id != -1:
-            return
-        log_message(f'Sending LEADER_DOWN to the right neighbour')
-        response = send_message(BaseRequest(network_info.id, MessageType.LEADER_DOWN))
-        log_message(f'OK sending LEADER_DOWN to the right neighbour')
-    except BaseException:
-        log_message('FAIL sending LEADER_DOWN to the right neighbour')
+    if network_info.leader_id != -1:
+        return
+    log_message(f'Sending LEADER_DOWN to the right neighbour')
+    send_message_async(BaseRequest(network_info.id, MessageType.LEADER_DOWN))
 
     timer_manager.add_timer_and_run('leader_down', send_leader_down_message)
 
@@ -74,12 +70,12 @@ def send_election_message():
         counters['election_init'] = 0
 
         if not network_info.round_trip_made:
-            timer_manager.add_timer_and_run('election_init', send_election_message)
+            timer_manager.add_timer_and_run('election_init', send_election_message, True)
             log_message('-- round trip not made yet, continue sending ELECTION messages')
 
-    except BaseException:
+    except Exception:
         log_message(f'FAIL sending ELECTION to the right neighbour')
-        timer_manager.add_timer_and_run('election_init', send_election_message)
+        timer_manager.add_timer_and_run('election_init', send_election_message, True)
         log_message('-- continue sending ELECTION messages')
         counters['election_init'] += 1
 
@@ -103,7 +99,7 @@ def recover_neighbour_dead():
             neighbour_reachable = True
             timer_manager.add_timer_and_run('ping', ping_right_neighbour)
             log_message('-- starting pinging after neighbour reached')
-        except BaseException:
+        except Exception:
             log_message(f'Could not contact {network_info.right_neighbour_ip}')
 
     if leader_dead:
@@ -155,15 +151,15 @@ def send_message_async(message, this_address=False):
 def send_message(message, this_address=False):
     return requests.post(
         network_info.get_right_neighbour_address() if not this_address else network_info.get_this_address(),
-        jsonpickle.encode(message, keys=True)
+        jsonpickle.encode(message, keys=True), timeout=0.5
     )
 
 
 def forward_message(message):
     try:
         message.sender_id = network_info.id
-        send_message(message)
-    except BaseException:
+        send_message_async(message)
+    except Exception:
         log_message(f'Could not forward message \n{message}')
 
 
@@ -236,7 +232,7 @@ def process_message():
         # otherwise, we start ID collection, which naturally leads to recoloring
         else:
             log_message('Received NODE DOWN message, starting new ID COLLECTION')
-            send_message(CollectRequest(network_info.id))
+            send_message_async(CollectRequest(network_info.id))
             return '{ "id": ' + f'{network_info.id}' + '}', 200
 
     # if the election is ongoing
@@ -250,7 +246,7 @@ def process_message():
             # if the leader is down, repeat the message
             if network_info.leader_down:
                 log_message('Received ELECTION message with lower ID, propagating my own as leader is down')
-                send_message(BaseRequest(network_info.id, MessageType.ELECTION_ROUND))
+                send_message_async(BaseRequest(network_info.id, MessageType.ELECTION_ROUND))
             else:
                 log_message(f'Received ELECTION message with lower ID, blocking')
             return '{ "id": ' + f'{network_info.id}' + '}', 200
@@ -264,7 +260,7 @@ def process_message():
                 network_info.round_trip_made = True
                 # announce leader
                 log_message(f'ELECTION message came back to origin, announcing as leader')
-                send_message(BaseRequest(network_info.id, MessageType.LEADER_ELECTED))
+                send_message_async(BaseRequest(network_info.id, MessageType.LEADER_ELECTED))
                 network_info.leader_id = network_info.id
 
             return '{ "id": ' + f'{network_info.id}' + '}', 200
@@ -296,7 +292,7 @@ def process_message():
         if sender_this_node(data):
             log_message(f'LEADER ELECTED message came back to leader')
             log_message(f'Sending COLLECTION message')
-            send_message(CollectRequest(network_info.id))
+            send_message_async(CollectRequest(network_info.id))
         else:
             log_message('Forwarding LEADER_ELECTED message')
             forward_message(data)
@@ -312,13 +308,13 @@ def process_message():
             log_message(f'Color set to Color.GREEN')
             log_message(f'Sending COLORING request')
             color_request = ColorRequest(network_info.id, network_info.node_ids)
-            send_message(color_request)
+            send_message_async(color_request)
             pass
         # add node ID and pass message
         else:
             log_message(f'Adding ID to the COLLECTION message')
             data.ids.append(network_info.id)
-            send_message(data)
+            send_message_async(data)
 
         return '{ "id": ' + f'{network_info.id}' + '}', 200
 
