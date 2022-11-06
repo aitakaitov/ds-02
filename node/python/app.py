@@ -12,13 +12,16 @@ import threading
 import socket
 socket.setdefaulttimeout(5)
 
-PRINT_TO_STD = False
+PRINT_TO_STD = True
 if not PRINT_TO_STD:
     open('output', 'w+', encoding='utf-8').close()
 
 MODE = 'ip'
 TIMEOUT_SEC = 30
 
+# port runs on localhost, ip runs on network
+# port expects ports 5001, 5002, ...
+# ip expects addresses 10.0.1.101, 102, ...
 if MODE == 'port':
     parser = argparse.ArgumentParser()
     parser.add_argument('--port', required=True, type=int)
@@ -33,11 +36,7 @@ elif MODE == 'ip':
     PORT = 5000
 
 
-#if PORT != 5001:
 network_info = NetworkInfo(random.randint(0, 2_000_000_000), IP_ADDRESS, NODE_COUNT, PORT, MODE)
-#else:
-#    network_info = NetworkInfo(2_000_000_000, IP_ADDRESS, NODE_COUNT, PORT)
-
 timer_manager = TimerManager(TIMEOUT_SEC)
 counters = {}
 
@@ -48,11 +47,13 @@ def send_leader_down_message():
     log_message(f'Sending LEADER_DOWN to the right neighbour')
     send_message_async(BaseRequest(network_info.id, MessageType.LEADER_DOWN))
 
+    # continue the timer, we can cancel it later
     timer_manager.add_timer_and_run('leader_down', send_leader_down_message)
 
 
 def send_election_message():
     try:
+        # timeout when initializing the network - 10 minutes
         if counters['election_init'] * TIMEOUT_SEC >= 720:
             log_message('Could not contact the right neighbour for 10 minutes, assuming dead and moving onto next one')
             network_info.next_neighbour_shift()
@@ -69,6 +70,8 @@ def send_election_message():
             log_message('-- starting ping in send_election_message')
         counters['election_init'] = 0
 
+        # if we have not received the LEADER ELECTED message, we don't know if the ring is complete
+        # so we continue sending the message
         if not network_info.round_trip_made:
             timer_manager.add_timer_and_run('election_init', send_election_message, True)
             log_message('-- round trip not made yet, continue sending ELECTION messages')
@@ -91,7 +94,7 @@ def recover_neighbour_dead():
             network_info.color = Color.GREEN
             return
 
-        # try to contact the next in ring - if it does
+        # try to contact the next in ring
         log_message(f'Setting right neighbour to {network_info.get_right_neighbour_address()}, contacting')
         try:
             response = send_message(BaseRequest(network_info.id, MessageType.PING))
@@ -103,19 +106,18 @@ def recover_neighbour_dead():
             log_message(f'Could not contact {network_info.right_neighbour_ip}')
 
     if leader_dead:
+
+        network_info.leader_id = -1
         # if the leader is down, we send a message to inform others that the leader is down - this message
         # should be able to make it's way around the ring setting everyone's leader IDs to -1, allowing for the election
         # process to take place
-        network_info.leader_id = -1
-
-        # then we periodically send election messages - this is done in order to make sure that no one blocks the
-        # election message because their leader ID is not -1 yet (possible with threaded servers)
         timer_manager.add_timer_and_run('leader_down', send_leader_down_message)
         log_message('-- started leader down timer')
     else:
         # if the node is not the leader, we just send a message announcing it around and the leader catches it
         # he will then collect IDs again and color the ring
         if network_info.leader_id == network_info.id:
+            # If we are the leader, we just send it to ourselves
             log_message('Sending NODE_DOWN message to SELF')
             send_message(BaseRequest(network_info.id, MessageType.NODE_DOWN), this_address=True)
         else:
@@ -129,6 +131,7 @@ def ping_right_neighbour():
         send_message(BaseRequest(network_info.id, MessageType.PING))
         log_message(f'Right neighbour responded to ping')
 
+        # reset the timer
         timer_manager.cancel_timer('ping')
         timer_manager.add_timer_and_run('ping', ping_right_neighbour)
         log_message('-- starting ping in ping_right_neighbour')
@@ -139,6 +142,12 @@ def ping_right_neighbour():
 
 
 def send_message_async(message, this_address=False):
+    """
+    Sends the message non-blocking
+    :param message:
+    :param this_address: to ourselves
+    :return:
+    """
     thread = threading.Thread(target=send_message, args=(message, this_address))
     thread.start()
 
@@ -252,7 +261,7 @@ def process_message():
             return '{ "id": ' + f'{network_info.id}' + '}', 200
         # this node is the leader
         elif sender_this_node(data):
-            # this is here because of repeat messages
+            # this is here because of possible repeat messages
             if network_info.leader_id == -1:
                 # stop sending election messages
                 log_message('-- cancelling election timer')
@@ -264,7 +273,7 @@ def process_message():
                 network_info.leader_id = network_info.id
 
             return '{ "id": ' + f'{network_info.id}' + '}', 200
-        # forward the message
+        # forward the message if our ID is lower
         else:
             log_message('Forwarding ELECTION message')
             forward_message(data)
@@ -281,6 +290,7 @@ def process_message():
         if not exists:
             log_message('-- starting ping in leader_elected')
 
+        # mark leader as iup
         network_info.round_trip_made = True
         network_info.leader_down = False
 
@@ -337,6 +347,7 @@ def process_message():
 
 CORS(app)
 
+# if ip, listen on all interfaces
 if MODE == 'port':
     app.run(host='localhost', port=PORT)
 elif MODE == 'ip':

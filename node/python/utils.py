@@ -8,16 +8,21 @@ IP_OFFSET = 100
 
 class NetworkInfo:
     def __init__(self, _id, ip, node_count, port, mode):
+        # this node ID
         self.id = _id
         self.node_count = int(node_count)
+        # this node IP
         self.ip = ip
         self.leader_id = -1
         self.color = None
+        # only used by leader
         self.node_ids = None
-
+        # the port we run on
         self.port = port
 
+        # if a message has made a full circle
         self.round_trip_made = False
+        # if the leader is down
         self.leader_down = False
         self.mode = mode
 
@@ -72,17 +77,23 @@ class TimerManager:
         self.lock = threading.RLock()
 
     def add_timer_and_run(self, key, func, purge=False):
+        """
+        Adds a timer and runs it
+        :param key: timer key
+        :param func: timer function
+        :param purge: by default if a timer with the key exists and does not have Timer.finished set
+        it is not overwritten and a new timer is not started. Setting purge to True overrides this behaviour
+        :return:
+        """
         self.lock.acquire()
         if key in self.timers.keys():
             if not self.timers[key].finished.is_set() and not purge:
                 self.lock.release()
                 return
             else:
-                #print(f'adding {key} timer')
                 self.timers[key] = threading.Timer(self.timeout, func)
                 self.timers[key].start()
         else:
-            #print(f'adding {key} timer')
             self.timers[key] = threading.Timer(self.timeout, func)
             self.timers[key].start()
         self.lock.release()
